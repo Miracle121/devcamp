@@ -58,7 +58,10 @@ const bootcampsSchema = new mongoose.Schema({
         street: String,
         city: String,
         zipcode: String,
-        country: String
+        country: String,
+        state:String,
+        countryCode:String
+
     },
     careers: {
         // Array of strings
@@ -103,6 +106,10 @@ const bootcampsSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     }
+},
+{
+    toJSON:{virtuals:true},
+    toObject:{virtuals:true}
 })
 // Create bootcamp slug from the name
 bootcampsSchema.pre('save', function (next) {
@@ -112,6 +119,7 @@ bootcampsSchema.pre('save', function (next) {
 //Geocode & create locations
 bootcampsSchema.pre('save', async function (next) {
     const loc = await geocoder.geocode(this.address)
+    
     this.location = {
         type: 'Point',
         coordinates: [loc[0].longitude, loc[0].latitude],
@@ -120,10 +128,35 @@ bootcampsSchema.pre('save', async function (next) {
         city: loc[0].city,
         zipcode: loc[0].zipcode,
         country: loc[0].countryCode,
-
+        state:loc[0].stateCode,
+        countryCode:loc[0].countryCode
     }
 
     next()
+})
+
+//Cascade delete courses when a bootcamp is delete
+bootcampsSchema.pre('deleteOne',async function (next) {
+    try {
+        console.log("SDFsdfsd");
+        console.log(`Courses deleted from bootcamps ${this._id}`);
+    
+        await this.model('Courses').deleteMany({ bootcamp:this._id })
+        next();
+    } catch(err){
+            console.log(err);
+    }
+
+  
+    
+});
+
+// Reverse populate with virtuals
+bootcampsSchema.virtual('courses',{
+    ref:'Course',
+    localField:'_id',
+    foreignField:'bootcamp',
+    justOne:false
 })
 
 module.exports = mongoose.model('Bootcamps', bootcampsSchema)

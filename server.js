@@ -20,7 +20,9 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 const bootcamps = require('./routes/bootcamps');
+const course = require('./routes/course')
 app.use('/api/v1/bootcamps', bootcamps)
+app.use('/api/v1/course',course)
 app.use(errorHandler)
 
 const server = app.listen(PORT, () =>
