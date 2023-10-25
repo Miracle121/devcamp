@@ -1,4 +1,5 @@
-const Bootcamps = require('../models/bootcamps')
+const path = require('path')
+const Bootcamps = require('../models/Bootcamps')
 const ErrorResponse = require('../utils/errorResponse')
 const asyncHandler = require('../middleware/async')
 
@@ -7,84 +8,26 @@ const asyncHandler = require('../middleware/async')
 // @access Public
 
 exports.getBootcamps = asyncHandler(async (req, res, next) => {
+  
+    res.status(200).json(res.advancedResults)
+    // try {
+    //     const bootcamp = await Bootcamps.find()
+    //     res.status(200)
+    //         .json({
+    //             success: true,
+    //             // pagenations,
+    //             count: bootcamp.length,
+    //             data: bootcamp,
+    //             msg: 'Show all bootcamps'
+    //         })
 
-    let query;
-    // Copy req query
-    const reqQuery = {...req.query}
-
-    //Fields to exclude 
-    const removeFields =['select','sort','page','limit']
-
-    removeFields.forEach(params=> delete reqQuery[params])
-
-    //Create query string
-    let queryStr = JSON.stringify(reqQuery)
-
-    // console.log(queryStr);
-
-    //Create operators
-    queryStr = queryStr.replace(/\b(gt|gte|lte|in)\b/g, match => `$${match}`)
-
-   //Finding resource
-    query = Bootcamps.find(JSON.parse(queryStr)).populate('courses')
-
-    if(req.query.select){
-        const fields = req.query.select.split(',').join(' ')
-        
-        query = query.select(fields)
-    }
-    if(req.query.sort){
-        const sortBy = req.query.sort.split(',').join(' ')
-        
-        query = query.sort(sortBy)
-
-    }else{
-        query = query.sort('-createdAt')   
-    }
-    //pagenations
-    const page = parseInt(req.query.page, 10) || 10
-    const limit = parseInt(req.query.limit, 10) || 100
-    const startIndex = (page-1)*limit
-    const endIndex = page*limit
-    const totalDocuments = await Bootcamps.countDocuments()
-    query = query.skip(startIndex).limit(limit)
-
-    let pagenations ={}
-
-    if(endIndex<totalDocuments){
-        pagenations.next ={
-            page:page+1,
-            limit
-        }
-    }
-    if(startIndex>0){
-        pagenations.prev ={
-            page:page-1,
-            limit
-        }
-    }
-
-
-
-
-    try {
-        const bootcamp = await query //Bootcamps.find()
-        res.status(200)
-            .json({
-                success: true,
-                pagenations,
-                count: bootcamp.length,
-                data: bootcamp,
-                msg: 'Show all bootcamps'
-            })
-
-    } catch (err) {
-        res.status(400)
-            .json({
-                success: false,
-                msg: 'Bad Request'
-            })
-    }
+    // } catch (err) {
+    //     res.status(400)
+    //         .json({
+    //             success: false,
+    //             msg: 'Bad Request'
+    //         })
+    // }
 })
 
 //@desc get  Bootcamp by id
@@ -121,6 +64,17 @@ exports.getBootcampsById = asyncHandler(async (req, res, next) => {
 
 exports.createBootcamps = asyncHandler(async (req, res, next) => {
 
+    // Cheak for published bootcamp
+    const publishedBootcamp = await Bootcamps.findOne({ user: req.user.id })
+
+    //if the user is not an admin they can only add one bootcamp
+    if (publishedBootcamp && req.user.role !== 'admin') {
+        return next(new ErrorResponse(
+            `They user ID ${req.user.id} has already published a bootcamp`, 
+            400))
+    }
+
+
     const name = req.body.name
     const description = req.body.description
     const website = req.body.website
@@ -132,6 +86,7 @@ exports.createBootcamps = asyncHandler(async (req, res, next) => {
     const jobAssistance = req.body.jobAssistance
     const jobGuarantee = req.body.jobGuarantee
     const acceptGi = req.body.acceptGi
+    const user = req.user.id
     const bootcamp = new Bootcamps({
         name: name,
         description: description,
@@ -143,26 +98,16 @@ exports.createBootcamps = asyncHandler(async (req, res, next) => {
         housing: housing,
         jobAssistance: jobAssistance,
         jobGuarantee: jobGuarantee,
-        acceptGi: acceptGi
+        acceptGi: acceptGi,
+        user: user
     })
     const data = await bootcamp.save()
 
-    res.status(201)
-        .json({
-            success: true,
-            msg: `Create new bootcamp`,
-            data: data
-        })
-
-
-    // res.status(400)
-    //     .json({
-    //         success: false,
-    //         msg: 'Bad Request'
-    //     })
-
-
-
+    res.status(201).json({
+        success: true,
+        msg: `Create new bootcamp`,
+        data: data
+    })
 
 })
 
@@ -171,15 +116,9 @@ exports.createBootcamps = asyncHandler(async (req, res, next) => {
 //@access Public
 
 exports.updateBootcamps = async (req, res, next) => {
-
-
-
     try {
         const bootcamp_id = req.params.id
-        const bootcamp = await Bootcamps.findByIdAndUpdate(req.params.id, { $set: req.body }, {
-            new: true,
-            runValidators: true
-        })
+        let bootcamp = await Bootcamps.findById(req.params.id)
 
 
         if (!bootcamp) {
@@ -189,46 +128,25 @@ exports.updateBootcamps = async (req, res, next) => {
                     msg: `Bootcamp not found ${req.params.id}`
                 })
         }
+        //Make sure user is bootcamp owner
+        if(bootcamp.user.toString() !== req.user.id && req.user.role !=='admin'){
+            return next(
+                new ErrorResponse(`User ${req.params.id} is not authorized to update this bootcamp`,401)
+            )
+        }
+         bootcamp = await Bootcamps.findByIdAndUpdate(req.params.id, { $set: req.body }, {
+            new: true,
+            runValidators: true
+        })
+
         res.status(200)
             .json({
                 success: true,
                 data: bootcamp,
                 msg: `Updated bootcamp ${req.params.id}`
-            })
-        // const name = req.body.name
-        // const description = req.body.description
-        // const website = req.body.website
-        // const phone = req.body.phone
-        // const email = req.body.email
-        // const address = req.body.address
-        // const careers = req.body.careers
-        // const housing = req.body.housing
-        // const jobAssistance = req.body.jobAssistance
-        // const jobGuarantee = req.body.jobGuarantee
-        // const acceptGi = req.body.acceptGi
-
-        // bootcamp.name = name
-        // bootcamp.description = description
-        // bootcamp.website = website
-        // bootcamp.phone = phone
-        // bootcamp.email = email
-        // bootcamp.address = address
-        // bootcamp.careers = careers
-        // bootcamp.housing = housing
-        // bootcamp.jobAssistance = jobAssistance
-        // bootcamp.jobGuarantee = jobGuarantee
-        // bootcamp.acceptGi = acceptGi
-        // const data = await bootcamp.save()
-
-
+            })      
     } catch (err) {
         next(err)
-        // res.status(400)
-        //     .json({
-        //         success: false,
-        //         err: err,
-        //         msg: 'Bad Request'
-        //     })
 
     }
 
@@ -239,27 +157,78 @@ exports.updateBootcamps = async (req, res, next) => {
 //@access Public
 
 exports.deletedBootcamps = asyncHandler(async (req, res, next) => {
-    // try {
-        const bootcamp_id = req.params.id
-        
-        //const bootcamp = await Bootcamps.findById(bootcamp_id)
-        // console.log(bootcamp);
-        
-        await Bootcamps.deleteOne({_id:bootcamp_id})
+  
+    const bootcamp_id = req.params.id
 
+    let bootcamp = await Bootcamps.findById(bootcamp_id)
+
+
+
+      //Make sure user is bootcamp owner
+      if(bootcamp.user.toString() !== req.user.id && req.user.role !=='admin'){
+        return next(
+            new ErrorResponse(`User ${req.params.id} is not authorized to update this bootcamp`,401)
+        )
+    }
+
+    await Bootcamps.deleteOne({ _id: bootcamp_id })
+
+    res.status(200)
+        .json({
+            success: true,
+            // data: bootcamp,
+            msg: `Deleted bootcamp ${req.params.id}`
+        })
+
+
+})
+
+
+//@desc   Update Bootcamp 
+//@route  PUT /api/v1/bootcamps/:Id/photo
+//@access Private
+
+exports.UploadBootcampPhoto = asyncHandler(async (req, res, next) => {
+    const bootcamp_id = req.params.id
+    const bootcamp = await Bootcamps.findById(bootcamp_id)
+    if (!bootcamp) {
+        return next(
+            new ErrorResponse(`Bootcamp not found with id of ${bootcamp_id}`)
+        )
+    }
+    if (!req.files) {
+        return next(new ErrorResponse(`Please upload a file`, 400))
+    }
+
+  //Make sure user is bootcamp owner
+  if(bootcamp.user.toString() !== req.user.id && req.user.role !=='admin'){
+    return next(
+        new ErrorResponse(`User ${req.params.id} is not authorized to update this bootcamp`,401)
+    )
+}
+    // Cheaking file type
+    const file = req.files.file
+    if (!file.mimetype.startsWith('image')) {
+        return next(new ErrorResponse(`Please upload a image file`, 400))
+
+    }
+    //Cheak file size
+    if (file.size < process.env.MAX_FILE_UPLOAD) {
+        return next(new ErrorResponse(`Please upload an image less than ${process.env.MAX_FILE_UPLOAD}`, 400))
+    }
+    //Create file name
+    file.name = `photo_${bootcamp._id}${path.parse(file.name).ext}`
+    file.mv(`${process.env.FILE_UPLOAD_PATH}/${file.name}`, async err => {
+        if (err) {
+            console.log(err);
+            return next(new ErrorResponse(`Problem with upload a image file`, 500))
+        }
+        const bootcampdata = await Bootcamps.findByIdAndUpdate(bootcamp_id, { photo: file.name })
         res.status(200)
             .json({
                 success: true,
-                // data: bootcamp,
-                msg: `Deleted bootcamp ${req.params.id}`
+                data: bootcampdata,
+                msg: `Update bootcamp ${req.params.id}`
             })
-
-    // } catch (err) {
-    //     res.status(400)
-    //         .json({
-    //             success: false,
-    //             msg: 'Bad Request'
-    //         })
-    // }
-
+    })
 })

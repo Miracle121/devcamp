@@ -1,4 +1,5 @@
-const Course = require('../models/course')
+const Course = require('../models/Course')
+const Bootcamp = require('../models/Bootcamps')
 const ErrorResponse = require('../utils/errorResponse')
 const asyncHandler = require('../middleware/async')
 
@@ -8,22 +9,20 @@ const asyncHandler = require('../middleware/async')
 // @access Public
 
 exports.getCourses = asyncHandler(async (req, res, next) => {
-    let query;
+    // let query;
+
     if (req.params.bootcampiId) {
-        query = Course.find({ bootcamp: req.params.bootcampiId })
-    } else {
-        query = Course.find().populate({
-            path: 'bootcamp',
-            select: ' name , description'
+        const cours = await Course.find({ bootcamp: req.params.bootcampiId })
+        res.status(200).json({
+            success: true,
+            count: cours.length,
+            data: cours
         })
+
+    } else {
+        res.status(200).json(res.advancedResults)
     }
-    const cours = await query
-    res.status(200).json({
-        success: true,
-        count: cours.length,
-        data: cours,
-        msg: 'Show all cours'
-    })
+
 })
 
 //@desc get  Courses by id
@@ -59,30 +58,35 @@ exports.getCoursById = asyncHandler(async (req, res, next) => {
 
 exports.createCours = asyncHandler(async (req, res, next) => {
 
-    const title = req.body.title
-    const description = req.body.description
-    const weeks = req.body.weeks
-    const tuition = req.body.tuition
-    const minimumSkill = req.body.minimumSkill
-    const scholarshipAvailable = req.body.scholarshipAvailable
-    const bootcampId = req.body.bootcamp
+    req.body.bootcamp = req.params.bootcampId
+    req.body.user = req.user.id
 
-    const courses = new Course({
-        title: title,
-        description: description,
-        weeks: weeks,
-        tuition: tuition,
-        minimumSkill: minimumSkill,
-        scholarshipAvailable: scholarshipAvailable,
-        bootcamp: bootcampId
-    })
-    const data = await courses.save()
+    const bootcamp = await Bootcamp.findById(req.params.bootcampId)
 
+    if (!bootcamp) {
+        return next(
+            new ErrorResponse(`No bootcamp with the id of ${req.params.bootcampId}`)
+        )
+    }
+
+      //Make sure user is bootcamp owner
+      if(bootcamp.user.toString() !== req.user.id && req.user.role !=='admin'){
+        return next(
+            new ErrorResponse(`User ${req.user.id} is not authorized to add a course to bootcamp ${bootcamp._id}`,401)
+        )
+    }
+
+    const course = await Course.create(req.body)
     res.status(201).json({
         success: true,
         msg: `Create new course`,
-        data: data
+        data: course
     })
+
+
+
+
+
 })
 
 //@desc PUT  Update Courses 
@@ -111,13 +115,6 @@ exports.updateCours = async (req, res, next) => {
             })
     } catch (err) {
         next(err)
-        // res.status(400)
-        //     .json({
-        //         success: false,
-        //         err: err,
-        //         msg: 'Bad Request'
-        //     })
-
     }
 
 }
